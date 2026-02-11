@@ -1,5 +1,6 @@
 import http, { IncomingMessage, ServerResponse } from "http";
 import { URL } from "url";
+import { todos } from "./data";
 
 const PORT = Number(process.env.PORT || 3000);
 
@@ -19,7 +20,7 @@ function sendText(res: ServerResponse, status: number, text: string) {
 
 const server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
     if (!req.url) return sendText(res, 400, "Bad Request: Missing URL");
-    if (req.method) return sendText(res, 400, "Bad Request: no method");
+    if (!req.method) return sendText(res, 400, "Bad Request: no method");
 
 
     const url = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`);
@@ -29,23 +30,32 @@ const server = http.createServer((req: IncomingMessage, res: ServerResponse) => 
         return sendText(res, 200, "Hello from TS http server!");
     }
 
-     if (req.method === "GET" && pathname === "/health") {
-        return sendJson(res, 200, { ok: true, time: new Date().toISOString() });
+    if (req.method === "GET" && pathname === "/todos") {
+        return sendJson(res, 200, { ok: true, todos });
     }
 
-     if (req.method === "GET" && pathname === "/echo") {
+    if (req.method === "GET" && pathname === "/todo") {
+        const id = searchParams.get("id");
+        return sendJson(res, 200, { ok: true, todo: id ? todos.find(t => t.id === Number(id)) : null });
+    }
+
+    if (req.method === "GET" && pathname === "/echo") {
         const msg = searchParams.get("msg") ?? "nothing";
         return sendJson(res, 200, { msg });
     }
 
-    if (req.method === "POST" && pathname === "/json") {
+    if (req.method === "POST" && pathname === "/todos") {
         let raw = "";
         req.on("data", (chunk) => (raw += chunk));
         req.on("end", () => {
         try {
             const parsed = raw ? JSON.parse(raw) : null;
-            return sendJson(res, 200, { received: parsed });
-        } catch {
+            if (!parsed || typeof parsed.text !== "string" || parsed.text.trim() === "") {
+                return sendJson(res, 400, { error: "Missing 'text' field in request body" });
+            }
+            todos.push({ id: todos.length + 1, text: String(parsed?.text ?? "Untitled"), done: false });
+            return sendJson(res, 201, { received: parsed });
+        } catch (e) {
             return sendJson(res, 400, { error: "Invalid JSON" });
         }
         });
