@@ -4,6 +4,7 @@ import { todos } from "./data";
 
 const PORT = Number(process.env.PORT || 3000);
 const ok = true;
+const newId = todos.reduce((m, t) => Math.max(m, t.id), 0) + 1;
 
 function sendJson(res: ServerResponse, status: number, data: unknown) {
   const body = JSON.stringify(data);
@@ -55,6 +56,9 @@ const server = http.createServer((req: IncomingMessage, res: ServerResponse) => 
 
     if (req.method === "POST" && pathname === "/todo") {
         let raw = "";
+        req.on("error", () => {
+            if (!res.headersSent) sendJson(res, 400, { error: "Request stream error" });
+        });
         req.on("data", (chunk) => (raw += chunk));
         req.on("end", () => {
         try {
@@ -62,9 +66,9 @@ const server = http.createServer((req: IncomingMessage, res: ServerResponse) => 
             if (!parsed || typeof parsed.text !== "string" || parsed.text.trim() === "") {
                 return sendJson(res, 400, { error: "Missing 'text' field in request body" });
             }
-            const newTodo = { id: todos.length + 1, text: String(parsed?.text ?? "Untitled"), done: false }
+            const newTodo = { id: newId, text: String(parsed?.text ?? "Untitled"), done: false }
             todos.push(newTodo);
-            return sendJson(res, 201, { todo: newTodo });
+            return sendJson(res, 201, { ok, todo: newTodo });
         } catch (e) {
             return sendJson(res, 400, { error: "Invalid JSON" });
         }
@@ -74,6 +78,9 @@ const server = http.createServer((req: IncomingMessage, res: ServerResponse) => 
 
     if (req.method === "PATCH" && parts.length === 2 && parts[0] === "todo") {
         let raw = "";
+        req.on("error", () => {
+            if (!res.headersSent) sendJson(res, 400, { error: "Request stream error" });
+        });
         req.on("data", (chunk) => (raw += chunk));
         req.on("end", () => {
         try {
@@ -113,6 +120,18 @@ const server = http.createServer((req: IncomingMessage, res: ServerResponse) => 
         }
         });
         return;
+    }
+
+    if ((req.method === "DELETE" && parts.length === 2 && parts[0] === "todo")) {
+        const id = Number(parts[1]);
+        if (!Number.isInteger(id)) {
+            return sendJson(res, 400, { error: "Invalid id" });
+        }
+
+        const idx = todos.findIndex(t => t.id === id);
+        if (idx === -1) return sendJson(res, 404, { error: "Todo not found" });
+        const [deleted] = todos.splice(idx, 1);
+        return sendJson(res, 200, { ok, todo: deleted });
     }
 
      return sendJson(res, 404, { error: "Not Found", method: req.method, path: pathname });
